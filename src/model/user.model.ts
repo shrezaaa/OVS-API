@@ -8,13 +8,13 @@ export interface User {
   DateOfIssue?: string;
   Address?: Address;
   roleKind: 'ADMIN' | 'CUSTOMER';
-  orders?: Orders | any;
+  orders?: Order[] | any;
 }
 
-export interface Orders {
+export interface Order {
   productIDs: string[];
   count: number;
-  sum: number;
+  sum?: number;
   mode: 'IN_CART' | 'NEXT_CART' | 'ARCHIVE';
 }
 

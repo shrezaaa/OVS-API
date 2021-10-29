@@ -3,19 +3,24 @@ import { CacheManagerService } from './cache-manager/services/cache-manager.serv
 import { MockProducts } from './mocks/products.mock';
 import { MockUsers } from './mocks/users.mock';
 import { Product } from './model/product.model';
-import { User } from './model/user.model';
+import { Order, User } from './model/user.model';
 
 @Controller()
 export class AppController {
   constructor(private readonly cacheService: CacheManagerService) {}
 
   async _findUser(userName: string) {
-    let userKeys = await this.cacheService.list('U*');
+    let userKeys: string[] = await this.cacheService.list('U*');
     let users = await this.cacheService.mGet(userKeys);
-    let res = users.filter((u: User) => {
-      u.userName == userName;
+    let res: User = null;
+    let key: string = null;
+    users.forEach((user, index) => {
+      if (JSON.parse(user).userName == userName) {
+        res = user;
+        key = userKeys[index];
+      }
     });
-    return res[0];
+    return { KEY: key, VALUE: res };
   }
 
   @Post('clearRedis') async clearRedis() {
@@ -30,7 +35,7 @@ export class AppController {
         JSON.stringify(user),
       );
     });
-    
+
     return result;
   }
 
@@ -94,28 +99,65 @@ export class AppController {
 
   @Get('userCart')
   async userCart(@Param() UserName: string) {
-    this._findUser(UserName);
-    return '{}';
-  }
+    let user: { KEY: string; VALUE: User } = await this._findUser(UserName);
+    let result: Order[] = [];
+    user.VALUE.orders.forEach((element: Order) => {
+      if (element.mode == 'IN_CART') {
+        result.push(element);
+      }
+    });
+    let products: Product[] = ([] = await this.cacheService.mGet(
+      result[0].productIDs.toString(),
+    ));
+    Object.assign(result, {
+      Products: products,
+    });
 
-  @Get('userFutureCart')
-  async userFutureCart(@Param() UserID: string) {
-    return '{}';
+    return { result };
   }
 
   @Get('userOrders')
-  async userOrders(@Param() UserID: string) {
-    return '{}';
+  async userOrders(@Param() UserName: string) {
+    let user: { KEY: string; VALUE: User } = await this._findUser(UserName);
+    let result: Order[] = [];
+    user.VALUE.orders.forEach((element: Order) => {
+      if (element.mode == 'ARCHIVE') {
+        result.push(element);
+      }
+    });
+    return { result };
   }
 
   @Post('addToCart')
-  async addToCart(@Param() UserID: string, @Param() productKey: string) {
-    return '{}';
-  }
-
-  @Post('removeFromCart')
-  async removeFromCart(@Param() UserID: string, @Param() productKey: string) {
-    return '{}';
+  async addToCart(@Param() UserName: string, @Param() ProductID: string) {
+    let user: { KEY: string; VALUE: User } = await this._findUser(UserName);
+    let manipulatedUser: User = user.VALUE;
+    let cart: Order = null;
+    let cartIndex: number = 0;
+    manipulatedUser.orders.forEach((element: Order, index) => {
+      if (element.mode == 'IN_CART') {
+        cart = element;
+        cartIndex = index;
+      }
+    });
+    if (cart == null) {
+      manipulatedUser.orders.push({
+        productIDs: [],
+        count: 0,
+        mode: 'IN_CART',
+      });
+    }
+    let tempCart = manipulatedUser.orders[cartIndex];
+    manipulatedUser.orders[cartIndex] = {
+      count: tempCart.productIDs.length + 1,
+      productIDs: tempCart.push(ProductID),
+      mode: 'IN_CART',
+    };
+    let result = await this.cacheService.set(
+      user.KEY,
+      JSON.stringify(manipulatedUser),
+    );
+    return { result };
   }
 
   @Delete('removeUser')
